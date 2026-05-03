@@ -1,1 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WatchTogether ♡</title>
 
+  <!-- Firebase v9 compat (works as UMD, no bundler needed) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Google Fonts: Cormorant Garamond (display) + DM Sans (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─────────────────────────────────────────
+       Design tokens
+    ───────────────────────────────────────── */
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #111118;
+      --border:    #1e1e2e;
+      --accent:    #e8547a;          /* rose-red */
+      --accent2:   #c4415f;
+      --dim:       #5a5a72;
+      --text:      #ddd8f0;
+      --text-soft: #8888a8;
+      --radius:    14px;
+      --glow:      0 0 32px rgba(232,84,122,0.18);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Subtle noise texture overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: .5;
+    }
+
+    /* ─────────────────────────────────────────
+       Layout
+    ───────────────────────────────────────── */
+    #app {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    /* ─────────────────────────────────────────
+       Header
+    ───────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+    }
+
+    .logo {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.7rem;
+      font-weight: 300;
+      letter-spacing: .04em;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+
+    /* Connection badge */
+    #status-badge {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: .72rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--dim);
+      transition: color .3s;
+    }
+    #status-badge .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--dim);
+      transition: background .3s, box-shadow .3s;
+    }
+    #status-badge.connected { color: #5ecb8f; }
+    #status-badge.connected .dot {
+      background: #5ecb8f;
+      box-shadow: 0 0 8px #5ecb8f88;
+    }
+    #status-badge.syncing { color: var(--accent); }
+    #status-badge.syncing .dot {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%     { opacity: .35; }
+    }
+
+    /* ─────────────────────────────────────────
+       Setup panel (shown before joining)
+    ───────────────────────────────────────── */
+    #setup-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px 32px;
+      margin-bottom: 28px;
+      animation: fadeUp .5s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(16px); }
+      to   { opacity:1; transform:translateY(0);    }
+    }
+
+    .panel-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.1rem;
+      font-weight: 300;
+      letter-spacing: .06em;
+      color: var(--text-soft);
+      text-transform: uppercase;
+      margin-bottom: 22px;
+    }
+
+    /* Input row */
+    .input-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      flex: 1;
+      min-width: 180px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: .88rem;
+      font-weight: 300;
+      padding: 11px 16px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field::placeholder { color: var(--dim); }
+    .field:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(232,84,122,.12);
+    }
+
+    /* Buttons */
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      padding: 11px 22px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-size: .85rem;
+      font-weight: 500;
+      letter-spacing: .03em;
+      transition: transform .15s, box-shadow .2s, background .2s;
+    }
+    .btn:active { transform: scale(.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--accent2);
+      box-shadow: var(--glow);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-soft);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid transparent;
+      padding: 7px 14px;
+      font-size: .78rem;
+    }
+    .btn-ghost:hover { color: var(--text-soft); }
+
+    /* ─────────────────────────────────────────
+       Role pill
+    ───────────────────────────────────────── */
+    #role-pill {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 6px 16px;
+      font-size: .75rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      margin-bottom: 20px;
+    }
+    #role-pill .tag {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50px;
+      padding: 2px 10px;
+      font-size: .68rem;
+      letter-spacing: .1em;
+    }
+    #role-pill.visible { display: inline-flex; }
+
+    /* ─────────────────────────────────────────
+       Video container
+    ───────────────────────────────────────── */
+    #video-wrap {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%; /* 16:9 */
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 80px rgba(0,0,0,.6);
+      margin-bottom: 20px;
+    }
+
+    #player {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Fallback overlay shown when YouTube is blocked */
+    #yt-fallback {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: var(--surface);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      font-size: .9rem;
+      color: var(--text-soft);
+      text-align: center;
+      padding: 24px;
+    }
+    #yt-fallback .fallback-icon { font-size: 2.4rem; opacity: .4; }
+    #yt-fallback.visible { display: flex; }
+
+    /* Viewer overlay (blocks host controls for viewer) */
+    #viewer-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      cursor: default;
+      z-index: 5;
+      /* Transparent but blocks click-through to YouTube controls */
+      background: transparent;
+    }
+    #viewer-overlay.active { display: block; }
+
+    /* ─────────────────────────────────────────
+       Controls bar (host only)
+    ───────────────────────────────────────── */
+    #controls-bar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    #controls-bar.visible { display: flex; }
+
+    #url-input-bar {
+      flex: 1;
+      min-width: 220px;
+    }
+
+    /* ─────────────────────────────────────────
+       Info strip
+    ───────────────────────────────────────── */
+    #info-strip {
+      display: none;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+    #info-strip.visible { display: flex; }
+
+    .info-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 5px 14px;
+      font-size: .72rem;
+      color: var(--dim);
+      letter-spacing: .04em;
+    }
+    .info-chip strong { color: var(--text-soft); font-weight: 400; }
+
+    /* ─────────────────────────────────────────
+       Room code panel
+    ───────────────────────────────────────── */
+    #room-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 28px;
+      margin-bottom: 24px;
+      animation: fadeUp .4s ease both;
+      display: none;
+    }
+    #room-panel.visible { display: block; }
+
+    .room-label {
+      font-size: .68rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+    .room-code-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #room-code-display {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.5rem;
+      letter-spacing: .18em;
+      color: var(--text);
+    }
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--dim);
+      cursor: pointer;
+      font-size: .72rem;
+      padding: 4px 10px;
+      letter-spacing: .06em;
+      transition: color .2s, border-color .2s;
+    }
+    .copy-btn:hover { color: var(--text-soft); border-color: var(--accent); }
+
+    /* ─────────────────────────────────────────
+       Sync event toast
+    ───────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 9px 22px;
+      font-size: .78rem;
+      color: var(--text-soft);
+      letter-spacing: .04em;
+      opacity: 0;
+      transition: opacity .3s, transform .3s;
+      pointer-events: none;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ─────────────────────────────────────────
+       Heart decoration
+    ───────────────────────────────────────── */
+    .heart-divider {
+      text-align: center;
+      color: var(--accent);
+      font-size: .9rem;
+      opacity: .35;
+      margin: 18px 0;
+      letter-spacing: .6em;
+    }
+
+    /* ─────────────────────────────────────────
+       Responsive
+    ───────────────────────────────────────── */
+    @media (max-width: 520px) {
+      #setup-panel { padding: 24px 18px; }
+      .logo { font-size: 1.3rem; }
+      #room-code-display { font-size: 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Header ──────────────────────────── -->
+  <header>
+    <div class="logo">watch<span>♡</span>together</div>
+    <div id="status-badge">
+      <div class="dot"></div>
+      <span id="status-text">Not connected</span>
+    </div>
+  </header>
+
+  <!-- ── Setup panel (initial screen) ────── -->
+  <div id="setup-panel">
+    <div class="panel-title">Begin your session</div>
+
+    <div class="input-row">
+      <input id="room-input" class="field" type="text"
+             placeholder="Room ID (e.g. cozy-room-1)" autocomplete="off" />
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="startAsHost()">♛ Start as Host</button>
+      <button class="btn btn-secondary" onclick="joinAsViewer()">♡ Join as Viewer</button>
+    </div>
+
+    <div class="heart-divider">· · · · ·</div>
+
+    <div style="font-size:.78rem;color:var(--dim);line-height:1.7;">
+      <strong style="color:var(--text-soft)">Host</strong> controls playback and syncs with your partner.<br>
+      <strong style="color:var(--text-soft)">Viewer</strong> follows the host automatically.
+    </div>
+  </div>
+
+  <!-- ── Room code (shown after joining) ──── -->
+  <div id="room-panel">
+    <div class="room-label">Room</div>
+    <div class="room-code-row">
+      <div id="room-code-display">—</div>
+      <button class="copy-btn" onclick="copyRoom()">copy</button>
+      <button class="btn btn-ghost" onclick="leaveRoom()">leave</button>
+    </div>
+  </div>
+
+  <!-- ── Role indicator ───────────────────── -->
+  <div id="role-pill">
+    <span id="role-label">You are the</span>
+    <span class="tag" id="role-tag">HOST</span>
+  </div>
+
+  <!-- ── Video player ─────────────────────── -->
+  <div id="video-wrap">
+    <div id="player"></div>
+    <!-- Blocks viewer from touching YouTube controls -->
+    <div id="viewer-overlay"></div>
+    <!-- YouTube blocked fallback -->
+    <div id="yt-fallback">
+      <div class="fallback-icon">🎬</div>
+      <div>YouTube could not be loaded in your region.</div>
+      <div style="font-size:.76rem;opacity:.6">
+        The app is still connected — your partner may be watching normally.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Host controls bar ────────────────── -->
+  <div id="controls-bar">
+    <input id="url-input-bar" class="field url-input-bar" type="text"
+           placeholder="Paste YouTube link here…" autocomplete="off"
+           onkeydown="if(event.key==='Enter') loadUrl()" />
+    <button class="btn btn-primary" onclick="loadUrl()">▶ Load</button>
+  </div>
+
+  <!-- ── Info chips ────────────────────────── -->
+  <div id="info-strip">
+    <div class="info-chip">Video: <strong id="chip-vid">—</strong></div>
+    <div class="info-chip">Time: <strong id="chip-time">0:00</strong></div>
+    <div class="info-chip">State: <strong id="chip-state">—</strong></div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- ── Toast ─────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════════
+     YOUTUBE IFRAME API
+════════════════════════════════════════════ -->
+<script>
+  /* ─────────────────────────────────────────
+     YouTube Iframe API loader (async, crash-safe)
+  ───────────────────────────────────────── */
+  let ytApiReady = false;
+  let ytApiError = false;
+
+  // Load the API script with a timeout to detect if YouTube is blocked
+  (function loadYTApi() {
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.onerror = () => {
+      ytApiError = true;
+      document.getElementById('yt-fallback').classList.add('visible');
+      console.warn('[WatchTogether] YouTube API failed to load (possibly blocked).');
+    };
+    document.head.appendChild(tag);
+
+    // Extra timeout: if onYouTubeIframeAPIReady hasn't fired in 8s, show fallback
+    setTimeout(() => {
+      if (!ytApiReady) {
+        ytApiError = true;
+        document.getElementById('yt-fallback').classList.add('visible');
+      }
+    }, 8000);
+  })();
+
+  // Called by YouTube API when ready
+  function onYouTubeIframeAPIReady() {
+    ytApiReady = true;
+    // If already in a session, initialise the player now
+    if (App.sessionActive) App.initPlayer(App.currentVideoId);
+  }
+</script>
+
+<!-- ═══════════════════════════════════════════
+     FIREBASE CONFIG  — replace with your own
+════════════════════════════════════════════ -->
+<script>
+  const firebaseConfig = {
+    apiKey:        "YOUR_API_KEY",
+    authDomain:    "YOUR_DOMAIN",
+    databaseURL:   "YOUR_DB_URL",   // e.g. https://your-project-default-rtdb.firebaseio.com
+    projectId:     "YOUR_PROJECT_ID",
+  };
+</script>
+
+<!-- ═══════════════════════════════════════════
+     APPLICATION
+════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ───────────────────────────────────────────
+     Constants
+  ─────────────────────────────────────────── */
+  const SEEK_TOLERANCE_SEC   = 1.5;   // don't seek if within ±1.5 s
+  const DEBOUNCE_MS          = 400;   // debounce Firebase writes (ms)
+  const STALE_THRESHOLD_MS   = 800;   // ignore own writes received back within this window
+
+  /* ───────────────────────────────────────────
+     State
+  ─────────────────────────────────────────── */
+  const App = window.App = {
+    role:           null,   // 'host' | 'viewer'
+    roomId:         null,
+    sessionActive:  false,
+    currentVideoId: null,
+
+    // Firebase
+    db:             null,
+    roomRef:        null,
+    unsubscribe:    null,   // listener cleanup
+
+    // YouTube player
+    player:         null,
+    playerReady:    false,
+
+    // Sync loop prevention
+    isSyncing:      false,  // true while we apply a remote update
+    lastWriteTime:  0,      // timestamp of our most recent Firebase write
+
+    // Debounce timer
+    _writeTimer:    null,
+  };
+
+  /* ───────────────────────────────────────────
+     Firebase initialisation
+  ─────────────────────────────────────────── */
+  function initFirebase() {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    App.db = firebase.database();
+    setStatus('connected');
+  }
+
+  /* ───────────────────────────────────────────
+     Room helpers
+  ─────────────────────────────────────────── */
+  function sanitiseRoomId(raw) {
+    return raw.trim().replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40) || 'room-1';
+  }
+
+  function setRoomRef(roomId) {
+    App.roomId  = roomId;
+    App.roomRef = App.db.ref(`/${roomId}/state`);
+  }
+
+  /* ───────────────────────────────────────────
+     Entry points: host / viewer
+  ─────────────────────────────────────────── */
+  window.startAsHost = function () {
+    const raw = document.getElementById('room-input').value;
+    const roomId = sanitiseRoomId(raw);
+
+    try { initFirebase(); } catch (e) {
+      toast('Firebase not configured — check your config.', 4000); return;
+    }
+
+    App.role = 'host';
+    setRoomRef(roomId);
+    App.sessionActive = true;
+
+    showSessionUI();
+    showToast('You are the host · Share the room code ♡');
+
+    // Start listener (host also listens so viewer join events are handled)
+    startListener();
+
+    // If YT API is already ready, init an empty player
+    if (ytApiReady) App.initPlayer(App.currentVideoId);
+  };
+
+  window.joinAsViewer = function () {
+    const raw = document.getElementById('room-input').value;
+    const roomId = sanitiseRoomId(raw);
+
+    try { initFirebase(); } catch (e) {
+      toast('Firebase not configured — check your config.', 4000); return;
+    }
+
+    App.role = 'viewer';
+    setRoomRef(roomId);
+    App.sessionActive = true;
+
+    showSessionUI();
+    showToast('Joined as viewer · Waiting for host ♡');
+
+    startListener();
+
+    if (ytApiReady) App.initPlayer(null);
+  };
+
+  window.leaveRoom = function () {
+    if (App.unsubscribe) { App.unsubscribe(); App.unsubscribe = null; }
+    if (App.player) { try { App.player.destroy(); } catch (_) {} App.player = null; }
+    App.role = null; App.roomId = null; App.roomRef = null;
+    App.sessionActive = false; App.playerReady = false;
+    App.currentVideoId = null;
+
+    document.getElementById('setup-panel').style.display = '';
+    document.getElementById('room-panel').classList.remove('visible');
+    document.getElementById('role-pill').classList.remove('visible');
+    document.getElementById('controls-bar').classList.remove('visible');
+    document.getElementById('info-strip').classList.remove('visible');
+    document.getElementById('viewer-overlay').classList.remove('active');
+    document.getElementById('yt-fallback').classList.remove('visible');
+    document.getElementById('player').innerHTML = '';
+    setStatus('disconnected');
+  };
+
+  /* ───────────────────────────────────────────
+     Show session UI (common to host & viewer)
+  ─────────────────────────────────────────── */
+  function showSessionUI() {
+    document.getElementById('setup-panel').style.display = 'none';
+    document.getElementById('room-panel').classList.add('visible');
+    document.getElementById('room-code-display').textContent = App.roomId;
+    document.getElementById('role-pill').classList.add('visible');
+    document.getElementById('role-tag').textContent = App.role === 'host' ? 'HOST' : 'VIEWER';
+    document.getElementById('info-strip').classList.add('visible');
+
+    if (App.role === 'host') {
+      document.getElementById('controls-bar').classList.add('visible');
+      document.getElementById('viewer-overlay').classList.remove('active');
+    } else {
+      document.getElementById('controls-bar').classList.remove('visible');
+      document.getElementById('viewer-overlay').classList.add('active');
+    }
+  }
+
+  /* ───────────────────────────────────────────
+     YouTube Player
+  ─────────────────────────────────────────── */
+  App.initPlayer = function (videoId) {
+    if (ytApiError) return; // YouTube blocked — skip gracefully
+
+    const opts = {
+      videoId: videoId || '',
+      playerVars: {
+        autoplay:       0,
+        controls:       App.role === 'host' ? 1 : 0,
+        rel:            0,
+        modestbranding: 1,
+        iv_load_policy: 3,
+        enablejsapi:    1,
+        origin:         location.origin || 'https://localhost',
+      },
+      events: {
+        onReady:       onPlayerReady,
+        onStateChange: onPlayerStateChange,
+        onError:       onPlayerError,
+      },
+    };
+
+    // Destroy existing player if any
+    if (App.player) { try { App.player.destroy(); } catch (_) {} }
+
+    try {
+      App.player = new YT.Player('player', opts);
+    } catch (e) {
+      document.getElementById('yt-fallback').classList.add('visible');
+    }
+  };
+
+  function onPlayerReady() {
+    App.playerReady = true;
+    // Viewer: if there's already a state in Firebase, snap to it
+    if (App.role === 'viewer') {
+      App.roomRef.once('value').then(snap => {
+        const state = snap.val();
+        if (state && state.videoId) applyRemoteState(state, true);
+      });
+    }
+  }
+
+  function onPlayerError(e) {
+    console.warn('[WatchTogether] YT player error', e.data);
+    // Code 2 = invalid videoId, 100/101/150 = video unavailable
+  }
+
+  /* ─── Host: react to player events ──────── */
+  function onPlayerStateChange(e) {
+    // If we're in the middle of applying a remote update, skip writing
+    if (App.isSyncing) return;
+    if (App.role !== 'host') return;
+
+    const state = e.data; // YT.PlayerState constants
+    /*
+      -1 = unstarted
+       0 = ended
+       1 = playing
+       2 = paused
+       3 = buffering
+       5 = video cued
+    */
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
+      scheduleWrite();
+    }
+  }
+
+  /* ───────────────────────────────────────────
+     Firebase: write (debounced)
+  ─────────────────────────────────────────── */
+  function scheduleWrite() {
+    clearTimeout(App._writeTimer);
+    App._writeTimer = setTimeout(writeState, DEBOUNCE_MS);
+  }
+
+  function writeState() {
+    if (!App.playerReady || !App.roomRef) return;
+    if (App.role !== 'host') return;
+
+    let playerState;
+    try { playerState = App.player.getPlayerState(); } catch (_) { return; }
+    let currentTime;
+    try { currentTime = App.player.getCurrentTime(); } catch (_) { return; }
+
+    const isPlaying = playerState === YT.PlayerState.PLAYING;
+
+    const payload = {
+      videoId:   App.currentVideoId,
+      time:      currentTime,
+      playing:   isPlaying,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    };
+
+    App.lastWriteTime = Date.now();
+    App.roomRef.set(payload).catch(err => {
+      console.error('[WatchTogether] Firebase write error', err);
+    });
+
+    updateInfoChips(payload);
+  }
+
+  /* ───────────────────────────────────────────
+     Firebase: listen
+  ─────────────────────────────────────────── */
+  function startListener() {
+    if (!App.roomRef) return;
+
+    const handler = App.roomRef.on('value', snap => {
+      const state = snap.val();
+      if (!state) return;
+
+      // Ignore stale echoes of our own writes
+      const age = Date.now() - App.lastWriteTime;
+      if (App.role === 'host' && age < STALE_THRESHOLD_MS) return;
+
+      if (App.role === 'viewer') {
+        applyRemoteState(state, false);
+      } else {
+        // Host: just update chips from Firebase (e.g. to confirm write)
+        updateInfoChips(state);
+      }
+
+      setStatus('connected');
+    });
+
+    // Store cleanup function
+    App.unsubscribe = () => App.roomRef.off('value', handler);
+  }
+
+  /* ───────────────────────────────────────────
+     Apply remote state (viewer)
+  ─────────────────────────────────────────── */
+  function applyRemoteState(state, forceSeek) {
+    if (!App.playerReady || !App.player) {
+      // Player not ready yet; re-try once it is
+      const retryId = setInterval(() => {
+        if (App.playerReady) { clearInterval(retryId); applyRemoteState(state, forceSeek); }
+      }, 200);
+      return;
+    }
+
+    App.isSyncing = true; // block re-entrance
+    setStatus('syncing');
+
+    // ── Load new video if needed ─────────────
+    if (state.videoId && state.videoId !== App.currentVideoId) {
+      App.currentVideoId = state.videoId;
+      try {
+        App.player.loadVideoById({ videoId: state.videoId, startSeconds: state.time || 0 });
+      } catch (e) {
+        console.warn('[WatchTogether] loadVideoById failed', e);
+      }
+    }
+
+    // ── Seek if drift exceeds tolerance ──────
+    if (typeof state.time === 'number') {
+      let currentTime = 0;
+      try { currentTime = App.player.getCurrentTime(); } catch (_) {}
+      const drift = Math.abs(state.time - currentTime);
+
+      if (forceSeek || drift > SEEK_TOLERANCE_SEC) {
+        try { App.player.seekTo(state.time, true); } catch (_) {}
+      }
+    }
+
+    // ── Play / Pause ─────────────────────────
+    setTimeout(() => {
+      try {
+        if (state.playing) {
+          App.player.playVideo();
+        } else {
+          App.player.pauseVideo();
+        }
+      } catch (_) {}
+
+      updateInfoChips(state);
+      setStatus('connected');
+
+      // Release sync lock after a short grace period
+      setTimeout(() => { App.isSyncing = false; }, 600);
+    }, 150);
+  }
+
+  /* ───────────────────────────────────────────
+     Host: load a YouTube URL
+  ─────────────────────────────────────────── */
+  window.loadUrl = function () {
+    if (App.role !== 'host') return;
+    const input = document.getElementById('url-input-bar');
+    const url   = input.value.trim();
+    const vid   = extractVideoId(url);
+
+    if (!vid) { showToast('Could not find a YouTube video ID in that URL.'); return; }
+
+    App.currentVideoId = vid;
+    input.value = '';
+
+    if (!App.playerReady) {
+      // Player not initialised yet — init with this video
+      App.initPlayer(vid);
+    } else {
+      try {
+        App.player.loadVideoById(vid);
+      } catch (e) {
+        App.initPlayer(vid);
+      }
+    }
+
+    // Write state immediately
+    setTimeout(writeState, 800);
+    showToast('Video loaded ♡');
+  };
+
+  /* ───────────────────────────────────────────
+     Periodic sync tick (host pushes time every 5 s while playing)
+     This compensates for buffering differences between the two users.
+  ─────────────────────────────────────────── */
+  setInterval(() => {
+    if (App.role !== 'host' || !App.playerReady || !App.player) return;
+    let s;
+    try { s = App.player.getPlayerState(); } catch (_) { return; }
+    if (s === YT.PlayerState.PLAYING) scheduleWrite();
+  }, 5000);
+
+  /* ───────────────────────────────────────────
+     Utilities
+  ─────────────────────────────────────────── */
+  function extractVideoId(url) {
+    // Support: youtu.be/ID, ?v=ID, /embed/ID, /shorts/ID
+    const patterns = [
+      /(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+      /^([A-Za-z0-9_-]{11})$/, // bare ID
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  function formatTime(secs) {
+    secs = Math.floor(secs || 0);
+    const m = Math.floor(secs / 60);
+    const s = String(secs % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function updateInfoChips(state) {
+    document.getElementById('chip-vid').textContent   = state.videoId ? state.videoId.slice(0,11) : '—';
+    document.getElementById('chip-time').textContent  = formatTime(state.time);
+    document.getElementById('chip-state').textContent = state.playing ? '▶ Playing' : '⏸ Paused';
+  }
+
+  /* ── Status badge ────────────────────────── */
+  function setStatus(s) {
+    const badge = document.getElementById('status-badge');
+    const text  = document.getElementById('status-text');
+    badge.className = '';
+    badge.classList.add(s);
+    const labels = { connected: 'Connected', syncing: 'Syncing…', disconnected: 'Not connected' };
+    text.textContent = labels[s] || s;
+  }
+
+  /* ── Toast ───────────────────────────────── */
+  let toastTimer;
+  function showToast(msg, dur = 2600) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), dur);
+  }
+  window.showToast = showToast; // expose for external use
+
+  /* ── Copy room code ──────────────────────── */
+  window.copyRoom = function () {
+    navigator.clipboard?.writeText(App.roomId).then(() => showToast('Room ID copied!')).catch(() => {});
+  };
+
+  /* ───────────────────────────────────────────
+     Firebase connectivity monitor
+  ─────────────────────────────────────────── */
+  function monitorConnectivity() {
+    if (!App.db) return;
+    const connRef = App.db.ref('.info/connected');
+    connRef.on('value', snap => {
+      if (snap.val() === true) {
+        setStatus('connected');
+      } else {
+        setStatus('disconnected');
+      }
+    });
+  }
+
+  // Start monitoring once Firebase is initialised (after session starts)
+  const _origStartAsHost = window.startAsHost;
+  const _origJoinAsViewer = window.joinAsViewer;
+
+  window.startAsHost = function () {
+    _origStartAsHost();
+    setTimeout(monitorConnectivity, 500);
+  };
+  window.joinAsViewer = function () {
+    _origJoinAsViewer();
+    setTimeout(monitorConnectivity, 500);
+  };
+
+})();
+</script>
+
+</body>
+</html>
